@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 '''
 OlrGlobal calculates and plots Outgoing Longwave radiation from the the NOAA
 interpolated once daily OLR measurements. The data is described here:
@@ -24,6 +25,7 @@ Created on 21/04/2014
 @author: michaelwebster
 '''
 import sys
+import argparse
 from netCDF4 import *
 import numpy as np
 import numpy.ma as ma
@@ -158,7 +160,7 @@ class OlrGlobal(object):
     #
     processedDataFname = None #"./olrAverages.npz"
 
-    def __init__(self, filename="/Users/michaelwebster/Desktop/climate/OLRMeasurements/olr.mon.mean.nc"):
+    def __init__(self, filename):
         '''
         The Constructor:
         - Loads the netcdf dataset from the file with name == filename.
@@ -336,6 +338,7 @@ class OlrGlobal(object):
         latitude in lat_list. Draw a best fit line to display the trend.
         """
         years_sorted = sorted(year_list)
+        years_sorted = [int(x) for x in years_sorted]
         if self.olrYearAvgsByLatitude is None:
             self.getLatitudeYearlyAvgs()
 
@@ -346,7 +349,7 @@ class OlrGlobal(object):
             starting_idx = ending_idx
             ending_idx = ei
 
-        olrs = list()            
+        olrs = list()
         for year in years_sorted:
             yr_idx = self.yearsToMonths[year][self.yi]
             new_avg = 0.0
@@ -356,16 +359,19 @@ class OlrGlobal(object):
                 idx = idx + 1
             new_avg = new_avg/float(ending_idx - starting_idx + 1)
             olrs.append(new_avg)
-        plt.plot(years_sorted, olrs)
-        plt.plot(years_sorted, olrs, 'g^')
-        plt.axis([years_sorted[0], years_sorted[len(years_sorted)-1], new_avg - 5, new_avg + 5])
+
+        years_modified = [int(x + 2000) if x < 1973 else int(x) for x in years_sorted]
+        plt.plot(years_modified, olrs)
+        plt.plot(years_modified, olrs, 'g^')
+        plt.axis([years_modified[0]-1, years_modified[len(years_modified) - 1]+1, new_avg - 5, new_avg + 5])
         plt.title(r'Average Yearly OLR for Latitudes %d$^{\circ} \rightarrow$ %d$^{\circ}$ Degrees North' \
                   % (self.getLats()[starting_idx],self.getLats()[ending_idx]))
         plt.xlabel("Year")
         plt.ylabel(r'Average OLR $Wm^{-2}$')
-        m = np.polyfit(years_sorted, olrs, 1)
-        yfits = np.polyval(m, years_sorted)
-        plt.plot(years_sorted, yfits)
+        if len(years_modified) > 1:
+            m = np.polyfit(years_modified, olrs, 1)
+            yfits = np.polyval(m, years_modified)
+            plt.plot(years_modified, yfits)
         plt.show()
         return
     
@@ -456,9 +462,70 @@ class OlrGlobal(object):
                 return False
         
 if __name__ == '__main__':
-    dset = OlrGlobal()
+    parser = argparse.ArgumentParser(usage = sys.argv[0] + \
+       " generates averages by year and by latitude from NOAA OLR data.")
+    parser.add_argument                                                     \
+    (                                                                       \
+        '-s', '--src',                                                      \
+        dest='src_file', action='store',                                    \
+        default='./olr.mon.ltm.nc',                                         \
+        help='The netcdf file containing monthly OLR that we want to process.' \
+    )
+    parser.add_argument                                                     \
+    (                                                                       \
+        '-p', '--plot',                                                     \
+        action='store_true',                                                \
+        help='Plot the data for the apropriate latitudes and years.'        \
+    )
+
+    parser.add_argument                                                     \
+    (                                                                       \
+        '-y', '--years', nargs=2,                                           \
+        help="If -p is selected, the range of years to plot. The range includes both endpoints."\
+    )
+    parser.add_argument                                                     \
+    (                                                                       \
+        '-l', '--lats', nargs=2,                                            \
+        help= "%s%s\n%s" %                                                  \
+        (                                                                   \
+            "If -p is selected, the range of latitudes to plot.",           \
+            "The range is inclusive of the two latitudes given.",           \
+            "The units of latitude are degrees North."                      \
+        )                                                                   \
+    )
+    args = parser.parse_args()
+
+    if not os.path.exists(args.src_file):
+        print("Error: Cannot find the %s olr file." % args.src_file)
+        sys.exit(-1)
+
+    #
+    # Setup the datset.
+    #    
+    dset = OlrGlobal(args.src_file)
     
     ytom = dset.getYearsToMonths()
-    htod = dset.getHoursToDate()
-    dset.plotOlrForYearsAndLatitudes(range(1980,2014), [-5, 5])
+
+    if args.plot:
+        year_start = None
+        year_end = None
+        if args.years != None:
+            year_start = min(int(args.years[0]), int(args.years[1]))
+            year_end = max(int(args.years[0]), int(args.years[1]))
+        else:
+            year_start = ytom.keys()[0]
+            year_end = ytom.keys()[len(ytom.keys()) - 1]
+
+        lats_start = None
+        lats_end = None
+
+        if args.lats != None:
+            lats_start = min(int(args.lats[0]), int(args.lats[1]))
+            lats_end = max(int(args.lats[0]), int(args.lats[1]))
+        else:
+            lats_start = dset.getLats()[0]
+            lats_end = dset.getLats()[len(dset.getLats()) - 1]
+
+        
+        dset.plotOlrForYearsAndLatitudes(range(year_start,year_end + 1), [lats_start, lats_end])
     
